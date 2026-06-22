@@ -533,7 +533,11 @@ async function writeAssembledApp(
 // --- Step 5: writeLinuxBuilderConfig helper ---
 
 async function writeLinuxBuilderConfig(config: ToolPackConfig, paths: LinuxPaths): Promise<void> {
-  const target = config.to === "dir" ? ["dir"] : ["AppImage"];
+  const target =
+    config.to === "dir" ? ["dir"] :
+    config.to === "deb" ? ["deb"] :
+    config.to === "appimage" ? ["AppImage"] :
+    ["AppImage", "deb"];
   const namespaceToken = sanitizeNamespace(config.namespace);
   const packagedVersion = await readPackagedVersion(config);
   const packageVersion = electronBuilderVersionForAppVersion(packagedVersion);
@@ -610,10 +614,18 @@ async function findBuiltAppImage(paths: LinuxPaths): Promise<string | null> {
   return appImage ? join(paths.appBuilderOutputRoot, appImage) : null;
 }
 
+async function findBuiltDeb(paths: LinuxPaths): Promise<string | null> {
+  if (!(await pathExists(paths.appBuilderOutputRoot))) return null;
+  const entries = await readdir(paths.appBuilderOutputRoot);
+  const deb = entries.find((entry) => entry.endsWith(".deb"));
+  return deb ? join(paths.appBuilderOutputRoot, deb) : null;
+}
+
 // --- Step 7: packLinux orchestrator + result type + stub for runBuildInContainer ---
 
 export type LinuxPackResult = {
   appImagePath: string | null;
+  debPath: string | null;
   outputRoot: string;
   resourceRoot: string;
   runtimeNamespaceRoot: string;
@@ -625,9 +637,11 @@ export async function packLinux(config: ToolPackConfig): Promise<LinuxPackResult
   if (config.containerized) {
     await runBuildInContainer(config);
     const paths = resolveLinuxPaths(config);
-    const appImagePath = config.to === "dir" ? null : await findBuiltAppImage(paths);
+    const appImagePath = config.to === "dir" || config.to === "deb" ? null : await findBuiltAppImage(paths);
+    const debPath = config.to === "dir" || config.to === "appimage" ? null : await findBuiltDeb(paths);
     return {
       appImagePath,
+      debPath,
       outputRoot: paths.appBuilderOutputRoot,
       resourceRoot: paths.resourceRoot,
       runtimeNamespaceRoot: config.roots.runtime.namespaceRoot,
@@ -645,9 +659,11 @@ export async function packLinux(config: ToolPackConfig): Promise<LinuxPackResult
   await writeLinuxBuilderConfig(config, paths);
   await runElectronBuilderLinux(config, paths);
 
-  const appImagePath = config.to === "dir" ? null : await findBuiltAppImage(paths);
+  const appImagePath = config.to === "dir" || config.to === "deb" ? null : await findBuiltAppImage(paths);
+  const debPath = config.to === "dir" || config.to === "appimage" ? null : await findBuiltDeb(paths);
   return {
     appImagePath,
+    debPath,
     outputRoot: paths.appBuilderOutputRoot,
     resourceRoot: paths.resourceRoot,
     runtimeNamespaceRoot: config.roots.runtime.namespaceRoot,
